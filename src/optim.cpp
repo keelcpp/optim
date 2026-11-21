@@ -292,7 +292,7 @@ VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, A
         for (usize i = 0; i < n; ++i) {
             for (usize j = 0; j < n; ++j) centroid[j] += sx[i * n + j];
         }
-        const f64 inv_n = 1.0 / static_cast<f64>(n);
+        const f64 inv_n = 1.0 / as<f64>(n);
         for (usize j = 0; j < n; ++j) centroid[j] *= inv_n;
 
         for (usize j = 0; j < n; ++j) {
