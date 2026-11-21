@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(keel)
+
+include("${CMAKE_CURRENT_LIST_DIR}/keel_optimTargets.cmake")
+
+if(TARGET keel::keel_optim AND NOT TARGET keel::optim)
+    add_library(keel::optim ALIAS keel::keel_optim)
+endif()
+
+check_required_components(keel_optim)
