@@ -1,22 +1,21 @@
+#include <keel/format.h>
+#include <keel/math.h>
 #include <keel/optim.h>
-
-#include <cmath>
-#include <cstdio>
 
 namespace {
 
-int g_failures = 0;
+keel::i32 g_failures = 0;
 
 void check(bool cond, const char* msg) {
     if (!cond) {
-        std::fprintf(stderr, "FAIL: %s\n", msg);
+        keel::eprintln("FAIL: %s", msg);
         ++g_failures;
     }
 }
 
 void check_near(keel::f64 got, keel::f64 expected, keel::f64 tol, const char* msg) {
-    if (std::fabs(got - expected) > tol || std::isnan(got)) {
-        std::fprintf(stderr, "FAIL: %s (got %.15g, expected %.15g, tol %.3g)\n", msg, got, expected, tol);
+    if (keel::abs(got - expected) > tol || keel::is_nan(got)) {
+        keel::eprintln("FAIL: %s (got %.15g, expected %.15g, tol %.3g)", msg, got, expected, tol);
         ++g_failures;
     }
 }
@@ -25,9 +24,9 @@ void test_brent_root_and_fzero() {
     auto f = [](keel::f64 x) { return x * x - 2.0; };
     auto r1 = keel::optim::brent_root(f, 0.0, 2.0);
     check(r1.ok(), "brent_root ok");
-    check_near(r1.x, std::sqrt(2.0), 1e-13, "brent_root sqrt(2)");
+    check_near(r1.x, keel::sqrt(2.0), 1e-13, "brent_root sqrt(2)");
 
-    auto r2 = keel::optim::fzero([](keel::f64 x) { return std::cos(x) - x; }, 0.5);
+    auto r2 = keel::optim::fzero([](keel::f64 x) { return keel::cos(x) - x; }, 0.5);
     check(r2.ok(), "fzero cos(x)-x ok");
     check_near(r2.x, 0.7390851332151607, 1e-13, "fzero Dottie number");
 
@@ -74,9 +73,9 @@ int main() {
     test_brent_min();
     test_nelder_mead();
     if (g_failures == 0) {
-        std::printf("ALL keel::optim TESTS PASSED\n");
+        keel::println("ALL keel::optim TESTS PASSED");
         return 0;
     }
-    std::fprintf(stderr, "%d FAILURE(S)\n", g_failures);
+    keel::eprintln("%d FAILURE(S)", g_failures);
     return 1;
 }
