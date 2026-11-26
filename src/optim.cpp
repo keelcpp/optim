@@ -2,34 +2,55 @@
 
 namespace keel::optim {
 
+namespace {
+
+[[nodiscard]] bool opposite_signs(f64 u, f64 v) noexcept {
+    if (!is_finite(u) || !is_finite(v)) return false;
+    return (u < 0.0 && v > 0.0) || (u > 0.0 && v < 0.0);
+}
+
+[[nodiscard]] bool better_val(f64 a, f64 b) noexcept {
+    if (is_nan(a)) return false;
+    if (is_nan(b)) return true;
+    return a < b;
+}
+
+} // namespace
+
 BracketResult find_bracket(ScalarFn fn, f64 x0, i32 max_expansions) {
     if (fn.empty()) return {Status::InvalidCallback, 0.0, 0.0};
     if (!is_finite(x0)) return {Status::InvalidInput, 0.0, 0.0};
     const i32 cap = (max_expansions > 0) ? max_expansions : 60;
 
     f64 step = (x0 == 0.0) ? 0.02 : (abs(x0) * 0.02);
-    if (step == 0.0) step = 0.02;
+    if (step == 0.0 || !is_finite(step)) step = 0.02;
 
     f64 a = x0;
     f64 b = x0;
     f64 fa = fn(a);
+    if (!is_finite(fa)) return {Status::NoBracket, a, b};
     if (fa == 0.0) return {Status::Ok, a, a};
     f64 fb = fa;
 
     f64 scale = 1.0;
     for (i32 i = 0; i < cap; ++i) {
         const f64 s = step * scale;
+        if (!is_finite(s)) break;
         scale *= 2.0;
         const f64 a_prev = a;
         const f64 fa_prev = fa;
+        const f64 b_prev = b;
+        const f64 fb_prev = fb;
         a = x0 - s;
         b = x0 + s;
+        if (!is_finite(a) || !is_finite(b)) break;
         fa = fn(a);
-        if (fa == 0.0) return {Status::Ok, a, a};
+        if (is_finite(fa) && fa == 0.0) return {Status::Ok, a, a};
         fb = fn(b);
-        if (fb == 0.0) return {Status::Ok, b, b};
-        if ((fa < 0.0) != (fb < 0.0)) return {Status::Ok, a, b};
-        if ((fa_prev < 0.0) != (fa < 0.0)) return {Status::Ok, a, a_prev};
+        if (is_finite(fb) && fb == 0.0) return {Status::Ok, b, b};
+        if (opposite_signs(fa, fb)) return {Status::Ok, a, b};
+        if (opposite_signs(fa_prev, fa)) return {Status::Ok, a, a_prev};
+        if (opposite_signs(fb_prev, fb)) return {Status::Ok, b_prev, b};
     }
     return {Status::NoBracket, a, b};
 }
@@ -39,13 +60,14 @@ ScalarResult brent_root(ScalarFn fn, f64 a, f64 b, f64 tol, i32 max_iter) {
     if (!is_finite(a) || !is_finite(b)) return {Status::InvalidInput, 0.0, 0.0, 0};
     const f64 use_tol = (tol > 0.0 && is_finite(tol)) ? tol : 1e-15;
     const i32 cap = (max_iter > 0) ? max_iter : 200;
-    constexpr f64 kEps = 1e-15;
+    constexpr f64 kEps = 2.2204460492503131e-16;
 
     f64 fa = fn(a);
     f64 fb = fn(b);
+    if (!is_finite(fa) || !is_finite(fb)) return {Status::InvalidInput, b, fb, 0};
     if (fa == 0.0) return {Status::Ok, a, 0.0, 0};
     if (fb == 0.0) return {Status::Ok, b, 0.0, 0};
-    if ((fa < 0.0) == (fb < 0.0)) return {Status::NoSignChange, b, fb, 0};
+    if (!opposite_signs(fa, fb)) return {Status::NoSignChange, b, fb, 0};
 
     f64 c = a;
     f64 fc = fa;
@@ -109,6 +131,9 @@ ScalarResult brent_root(ScalarFn fn, f64 a, f64 b, f64 tol, i32 max_iter) {
             b += (xm > 0.0 ? abs(tol1) : -abs(tol1));
         }
         fb = fn(b);
+        if (!is_finite(fb)) {
+            return {Status::InvalidInput, b, fb, it + 1};
+        }
     }
     return {Status::MaxIterations, b, fb, cap};
 }
@@ -129,20 +154,21 @@ ScalarResult brent_min(ScalarFn fn, f64 a, f64 b, f64 tol, i32 max_iter) {
     const f64 use_tol = (tol > 0.0 && is_finite(tol)) ? tol : 1e-6;
     const i32 cap = (max_iter > 0) ? max_iter : 200;
     const f64 gold = 0.5 * (3.0 - sqrt(5.0));
-    constexpr f64 kEps = 1e-10;
+    constexpr f64 kSqrtEps = 1.4901161193847656e-8;
 
     f64 x = a + gold * (b - a);
     f64 w = x;
     f64 v = x;
     f64 fx = fn(x);
+    if (!is_finite(fx)) return {Status::InvalidInput, x, fx, 0};
     f64 fw = fx;
     f64 fv = fx;
     f64 d = 0.0;
     f64 e = 0.0;
 
     for (i32 it = 0; it < cap; ++it) {
-        const f64 m = 0.5 * (a + b);
-        const f64 t1 = use_tol * abs(x) + kEps;
+        const f64 m = a + 0.5 * (b - a);
+        const f64 t1 = kSqrtEps * abs(x) + use_tol / 3.0;
         const f64 t2 = 2.0 * t1;
         if (abs(x - m) <= (t2 - 0.5 * (b - a))) {
             return {Status::Ok, x, fx, it};
@@ -171,6 +197,9 @@ ScalarResult brent_min(ScalarFn fn, f64 a, f64 b, f64 tol, i32 max_iter) {
         }
         const f64 u = (abs(d) >= t1) ? (x + d) : (x + (d >= 0.0 ? t1 : -t1));
         const f64 fu = fn(u);
+        if (!is_finite(fu)) {
+            return {Status::InvalidInput, x, fx, it + 1};
+        }
 
         if (fu <= fx) {
             if (u >= x) {
@@ -201,7 +230,7 @@ ScalarResult brent_min(ScalarFn fn, f64 a, f64 b, f64 tol, i32 max_iter) {
             }
         }
     }
-    return {Status::Ok, x, fx, cap};
+    return {Status::MaxIterations, x, fx, cap};
 }
 
 VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, Allocator* alloc) {
@@ -214,6 +243,12 @@ VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, A
     if (n == 0) {
         res.status = Status::InvalidInput;
         return res;
+    }
+    for (usize i = 0; i < n; ++i) {
+        if (!is_finite(x0[i])) {
+            res.status = Status::InvalidInput;
+            return res;
+        }
     }
     const f64 use_tol = (tol > 0.0 && is_finite(tol)) ? tol : 1e-4;
     const i32 cap = (max_iter > 0) ? max_iter : 500;
@@ -254,16 +289,17 @@ VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, A
     Array<f64> xc(alloc);
     xc.resize(n);
 
+    bool converged = false;
     i32 iters = 0;
     for (i32 it = 0; it < cap; ++it) {
         iters = it;
-        // Sort simplex vertices ascending by fv (insertion sort on n + 1 indices).
+        // Sort simplex vertices ascending by fv (NaN treated as worst).
         for (usize i = 0; i <= n; ++i) ord[i] = i;
         for (usize i = 1; i <= n; ++i) {
             const usize key = ord[i];
             const f64 key_val = fv[key];
             usize j = i;
-            while (j > 0 && key_val < fv[ord[j - 1]]) {
+            while (j > 0 && better_val(key_val, fv[ord[j - 1]])) {
                 ord[j] = ord[j - 1];
                 --j;
             }
@@ -279,14 +315,22 @@ VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, A
         swap(sx, new_sx);
         swap(fv, new_fv);
 
-        const f64 fspread = fv[n] - fv[0];
+        if (!is_finite(fv[0])) {
+            res.status = Status::InvalidInput;
+            break;
+        }
+
+        const f64 fspread = is_finite(fv[n]) ? (fv[n] - fv[0]) : Limits<f64>::infinity();
         f64 xspread = 0.0;
         for (usize i = 1; i <= n; ++i) {
             for (usize j = 0; j < n; ++j) {
                 xspread = max(xspread, abs(sx[i * n + j] - sx[j]));
             }
         }
-        if (fspread <= use_tol && xspread <= use_tol) break;
+        if (fspread <= use_tol && xspread <= use_tol) {
+            converged = true;
+            break;
+        }
 
         for (usize j = 0; j < n; ++j) centroid[j] = 0.0;
         for (usize i = 0; i < n; ++i) {
@@ -300,26 +344,26 @@ VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, A
         }
         const f64 fxr = eval_at(xr.data());
 
-        if (fxr < fv[0]) {
+        if (better_val(fxr, fv[0])) {
             for (usize j = 0; j < n; ++j) xe[j] = centroid[j] + kGamma * (xr[j] - centroid[j]);
             const f64 fxe = eval_at(xe.data());
-            if (fxe < fxr) {
+            if (better_val(fxe, fxr)) {
                 for (usize j = 0; j < n; ++j) sx[n * n + j] = xe[j];
                 fv[n] = fxe;
             } else {
                 for (usize j = 0; j < n; ++j) sx[n * n + j] = xr[j];
                 fv[n] = fxr;
             }
-        } else if (fxr < fv[n - 1]) {
+        } else if (better_val(fxr, fv[n - 1])) {
             for (usize j = 0; j < n; ++j) sx[n * n + j] = xr[j];
             fv[n] = fxr;
         } else {
-            const bool outside = fxr < fv[n];
+            const bool outside = better_val(fxr, fv[n]);
             const f64* base = outside ? xr.data() : (sx.data() + n * n);
             for (usize j = 0; j < n; ++j) xc[j] = centroid[j] + kRho * (base[j] - centroid[j]);
             const f64 fxc = eval_at(xc.data());
             const f64 fcompare = outside ? fxr : fv[n];
-            if (fxc <= fcompare) {
+            if (!is_nan(fxc) && (is_nan(fcompare) || fxc <= fcompare)) {
                 for (usize j = 0; j < n; ++j) sx[n * n + j] = xc[j];
                 fv[n] = fxc;
             } else {
@@ -333,10 +377,19 @@ VectorResult nelder_mead(VectorFn fn, ArrayRef<f64> x0, f64 tol, i32 max_iter, A
         }
     }
 
+    // Pick best vertex even if last iteration updated sx[n] before exiting cap.
+    usize best_i = 0;
+    for (usize i = 1; i <= n; ++i) {
+        if (better_val(fv[i], fv[best_i])) best_i = i;
+    }
+
     res.x.resize(n);
-    for (usize j = 0; j < n; ++j) res.x[j] = sx[j];
-    res.fval = fv[0];
-    res.iterations = iters;
+    for (usize j = 0; j < n; ++j) res.x[j] = sx[best_i * n + j];
+    res.fval = fv[best_i];
+    res.iterations = converged ? iters : cap;
+    if (res.status == Status::Ok && !converged) {
+        res.status = Status::MaxIterations;
+    }
     return res;
 }
 

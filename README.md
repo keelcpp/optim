@@ -10,6 +10,7 @@ Zero-STL C++20 derivative-free root-finding and optimization library built on [`
 - **`keel::optim::nelder_mead`** — Unconstrained multi-dimensional Nelder–Mead simplex minimization
 - Non-owning `keel::FunctionRef` callbacks — works cleanly with `-fno-exceptions -fno-rtti`
 - Zero STL headers in public headers and implementation
+- Differential reference test suite (`tests/verify_reference.py`) validated against SciPy and MATLAB (`fzero`, `fminbnd`, `fminsearch`)
 
 ## Usage
 
